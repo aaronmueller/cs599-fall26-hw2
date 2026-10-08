@@ -124,7 +124,10 @@ def start_server(
     gpu_memory_utilization: float = 0.9,
 ) -> subprocess.Popen:
     env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    # Treat `gpu` as an index into the GPUs this process can already see, so that
+    # schedulers (e.g. SGE) that restrict CUDA_VISIBLE_DEVICES are respected.
+    visible = [d for d in env.get("CUDA_VISIBLE_DEVICES", "").split(",") if d.strip()]
+    env["CUDA_VISIBLE_DEVICES"] = visible[gpu] if visible else str(gpu)
     env["VLLM_SERVER_DEV_MODE"] = "1"
     env["VLLM_LOGGING_LEVEL"] = logging_level
     command = [
@@ -272,6 +275,14 @@ def sync_policy_weights(policy: torch.nn.Module, vllm_base_url: str, weight_sync
 
     torch.cuda.set_device(next(policy.parameters()).device)
     _http_json("POST", f"{vllm_base_url}/pause", timeout=60)
+    # CHANGE FOR vLLM >= 0.21 =============
+    _http_json(
+        "POST",
+        f"{vllm_base_url}/start_weight_update",
+        {"is_checkpoint_format": True},
+        timeout=60,
+    )
+    # END CHANGE =====================================
     with ThreadPoolExecutor(max_workers=1) as executor:
         update_future = executor.submit(
             _http_json,
@@ -288,5 +299,8 @@ def sync_policy_weights(policy: torch.nn.Module, vllm_base_url: str, weight_sync
             ),
         )
         update_future.result()
+    # CHANGE FOR vLLM >= 0.21 =============
+    _http_json("POST", f"{vllm_base_url}/finish_weight_update", {}, timeout=300)
+    # END CHANGE =====================================
     _http_json("POST", f"{vllm_base_url}/reset_prefix_cache", timeout=60)
     _http_json("POST", f"{vllm_base_url}/resume", timeout=60)
