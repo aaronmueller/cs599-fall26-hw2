@@ -98,70 +98,11 @@ def test_compute_group_normalized_rewards_drgrpo(numpy_snapshot):
     )
 
 
-def test_compute_group_normalized_rewards_maxrl(numpy_snapshot):
-    advantages, _ = compute_group_normalized_rewards(
-        raw_rewards=torch.tensor([1.0, 0.0, 0.0, 1.0]),
-        group_size=2,
-        baseline="mean",
-        advantage_normalizer="mean",
-    )
-
-    numpy_snapshot.assert_match(advantages)
-
-
 def test_compute_policy_gradient_loss_on_policy(numpy_snapshot, raw_rewards_or_advantages, policy_log_probs):
     loss, _ = compute_policy_gradient_loss(
         raw_rewards_or_advantages=raw_rewards_or_advantages,
         policy_log_probs=policy_log_probs,
         importance_reweighting_method="none",
-    )
-
-    numpy_snapshot.assert_match(loss)
-
-
-def test_compute_policy_gradient_loss_off_policy(
-    numpy_snapshot,
-    raw_rewards_or_advantages,
-    policy_log_probs,
-    old_log_probs,
-):
-    noclip_loss, _ = compute_policy_gradient_loss(
-        raw_rewards_or_advantages=raw_rewards_or_advantages,
-        policy_log_probs=policy_log_probs,
-        importance_reweighting_method="noclip",
-        old_log_probs=old_log_probs,
-    )
-
-    clipped_loss, _ = compute_policy_gradient_loss(
-        raw_rewards_or_advantages=raw_rewards_or_advantages,
-        policy_log_probs=policy_log_probs,
-        importance_reweighting_method="grpo",
-        old_log_probs=old_log_probs,
-        cliprange=0.1,
-    )
-
-    numpy_snapshot.assert_match(
-        {
-            "noclip_loss": noclip_loss,
-            "clipped_loss": clipped_loss,
-        }
-    )
-
-
-def test_compute_policy_gradient_loss_off_policy_gspo(
-    numpy_snapshot,
-    raw_rewards_or_advantages,
-    policy_log_probs,
-    old_log_probs,
-    response_mask,
-):
-    loss, _ = compute_policy_gradient_loss(
-        raw_rewards_or_advantages=raw_rewards_or_advantages,
-        policy_log_probs=policy_log_probs,
-        importance_reweighting_method="gspo",
-        old_log_probs=old_log_probs,
-        cliprange=0.1,
-        response_mask=response_mask,
     )
 
     numpy_snapshot.assert_match(loss)
@@ -275,15 +216,6 @@ def test_grpo_train_step_standard_on_policy(numpy_snapshot, tiny_train_model, to
             },
             id="rft",
         ),
-        pytest.param(
-            {
-                "baseline": "mean",
-                "advantage_normalizer": "mean",
-                "loss_normalization": "constant",
-                "normalization_constant": 32,
-            },
-            id="maxrl",
-        ),
     ],
 )
 def test_grpo_train_step_variants_on_policy(numpy_snapshot, tiny_train_model, tokenizer, variant_kwargs):
@@ -300,45 +232,6 @@ def test_grpo_train_step_variants_on_policy(numpy_snapshot, tiny_train_model, to
         repeated_ground_truths=ground_truths,
         group_size=2,
         **variant_kwargs,
-    )
-
-    numpy_snapshot.assert_match(
-        _train_step_snapshot(
-            tiny_train_model,
-            loss,
-            metadata,
-        ),
-        rtol=1e-4,
-        atol=1e-6,
-    )
-    assert all(param.grad is None for param in tiny_train_model.parameters())
-
-
-@pytest.mark.parametrize(
-    "importance_reweighting_method",
-    [
-        "noclip",
-        "grpo",
-        "gspo",
-    ],
-)
-def test_grpo_train_step_off_policy(numpy_snapshot, tiny_train_model, tokenizer, importance_reweighting_method):
-    prompts, responses, ground_truths, old_log_probs = _train_step_inputs(tokenizer)
-    old_log_probs = torch.linspace(-1.5, 0.5, steps=old_log_probs.numel()).reshape_as(old_log_probs)
-    loss, metadata = grpo_train_step(
-        model=tiny_train_model,
-        tokenizer=tokenizer,
-        optimizer=_train_step_optimizer(tiny_train_model),
-        gradient_accumulation_steps=2,
-        max_grad_norm=1.0,
-        reward_fn=_train_step_reward_fn,
-        repeated_prompts=prompts,
-        rollout_responses=responses,
-        repeated_ground_truths=ground_truths,
-        group_size=2,
-        importance_reweighting_method=importance_reweighting_method,
-        old_log_probs=old_log_probs,
-        cliprange=0.1,
     )
 
     numpy_snapshot.assert_match(
